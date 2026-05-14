@@ -6,7 +6,7 @@
 import React, { useState, useEffect } from 'react';
 import { storage } from '../../lib/storage';
 import { Appointment } from '../../types';
-import { Search, Calendar, User, Clock, CheckCircle2, MessageSquare, X, Send, Phone, Mail, Bell } from 'lucide-react';
+import { Search, Calendar, User, Clock, CheckCircle2, MessageSquare, X, Send, Phone, Bell, IndianRupee } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 const DoctorAppointments = () => {
@@ -19,6 +19,7 @@ const DoctorAppointments = () => {
   const [symptoms, setSymptoms] = useState('');
   const [diagnosis, setDiagnosis] = useState('');
   const [treatmentNotes, setTreatmentNotes] = useState('');
+  const [consultationFee, setConsultationFee] = useState<string>('500');
   const [vitals, setVitals] = useState({
     weight: '',
     bloodPressure: '',
@@ -29,19 +30,14 @@ const DoctorAppointments = () => {
   const doctorId = localStorage.getItem('mauli_doctor_id');
   const today = new Date().toISOString().split('T')[0];
 
-  const fetchAppointments = () => {
-    if (!doctorId) return;
-    const allAppts = storage.getAppointments();
-    // Only show approved appointments for this doctor
-    const docAppts = allAppts.filter(app => app.doctorId === doctorId && app.status === 'approved');
-    setAppointments(docAppts);
-  };
-
   useEffect(() => {
-    fetchAppointments();
-    // Refresh data every 10 seconds to simulate real-time updates if needed
-    const interval = setInterval(fetchAppointments, 10000);
-    return () => clearInterval(interval);
+    if (!doctorId) return;
+    const unsubscribe = storage.subscribeDoctorAppointments(doctorId, (allAppts) => {
+      // Only show approved appointments for this doctor
+      const docAppts = allAppts.filter(app => app.status === 'approved');
+      setAppointments(docAppts);
+    });
+    return () => unsubscribe();
   }, [doctorId]);
 
   const handleOpenCheckup = (app: Appointment) => {
@@ -49,6 +45,7 @@ const DoctorAppointments = () => {
     setSymptoms(app.symptoms || '');
     setDiagnosis(app.diagnosis || '');
     setTreatmentNotes(app.treatmentNotes || '');
+    setConsultationFee(app.consultationFee?.toString() || '500');
     setVitals({
       weight: app.weight || '',
       bloodPressure: app.bloodPressure || '',
@@ -58,30 +55,21 @@ const DoctorAppointments = () => {
     setIsModalOpen(true);
   };
 
-  const handleSaveCheckup = (e: React.FormEvent) => {
+  const handleSaveCheckup = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedAppt) return;
 
-    const allAppts = storage.getAppointments();
-    const updatedAppts = allAppts.map(app => 
-      app.id === selectedAppt.id 
-        ? { 
-            ...app, 
-            checked: true, 
-            symptoms, 
-            diagnosis, 
-            treatmentNotes,
-            ...vitals 
-          } 
-        : app
-    );
+    await storage.updateAppointmentStatus(selectedAppt.id, 'approved', {
+      checked: true,
+      symptoms,
+      diagnosis,
+      treatmentNotes,
+      consultationFee: Number(consultationFee),
+      fee: Number(consultationFee), // For backward compatibility
+      ...vitals
+    });
 
-    storage.saveAppointments(updatedAppts);
-    fetchAppointments();
     setIsModalOpen(false);
-
-    // Simulate sending notifications
-    alert(`Success!\n\nMedical records updated for ${selectedAppt.patientName}.\nPatient notified via Email and WhatsApp.`);
   };
 
   const filteredAppts = appointments.filter(app => {
@@ -240,7 +228,7 @@ const DoctorAppointments = () => {
 
       <AnimatePresence>
         {isModalOpen && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 overflow-y-auto">
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -252,7 +240,7 @@ const DoctorAppointments = () => {
               initial={{ opacity: 0, scale: 0.9, y: 30 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 30 }}
-              className="relative w-full max-w-2xl bg-white rounded-[3rem] p-8 md:p-12 shadow-2xl overflow-hidden"
+              className="relative w-full max-w-2xl bg-white rounded-[3rem] p-8 md:p-12 shadow-2xl my-auto"
             >
               <div className="flex justify-between items-center mb-10">
                 <div className="flex items-center gap-4">
@@ -270,10 +258,6 @@ const DoctorAppointments = () => {
               </div>
 
               <div className="grid md:grid-cols-2 gap-6 mb-10">
-                <div className="flex items-center gap-4 text-gray-600 bg-gray-50/50 p-4 rounded-2xl border border-gray-50">
-                  <Mail size={18} className="text-teal-600" />
-                  <span className="text-sm font-bold">{selectedAppt?.email || 'No email provided'}</span>
-                </div>
                 <div className="flex items-center gap-4 text-gray-600 bg-gray-50/50 p-4 rounded-2xl border border-gray-50">
                   <Phone size={18} className="text-indigo-600" />
                   <span className="text-sm font-bold">{selectedAppt?.mobileNumber}</span>
@@ -335,7 +319,7 @@ const DoctorAppointments = () => {
                       value={symptoms}
                       onChange={(e) => setSymptoms(e.target.value)}
                       placeholder="e.g. Fever, Cough, Headache..."
-                      className="w-full px-6 py-4 bg-gray-50 border-2 border-gray-50 rounded-2xl focus:border-teal-500 focus:bg-white outline-none transition-all font-medium text-sm text-gray-700 resize-none h-24"
+                      className="w-full px-6 py-4 bg-gray-50 border-2 border-gray-50 rounded-2xl focus:border-teal-500 focus:bg-white outline-none transition-all font-medium text-sm text-gray-700 min-h-[100px]"
                     />
                   </div>
                   <div className="space-y-2">
@@ -344,7 +328,7 @@ const DoctorAppointments = () => {
                       value={diagnosis}
                       onChange={(e) => setDiagnosis(e.target.value)}
                       placeholder="e.g. Common Cold, Viral Infection..."
-                      className="w-full px-6 py-4 bg-gray-50 border-2 border-gray-50 rounded-2xl focus:border-teal-500 focus:bg-white outline-none transition-all font-medium text-sm text-gray-700 resize-none h-24"
+                      className="w-full px-6 py-4 bg-gray-50 border-2 border-gray-50 rounded-2xl focus:border-teal-500 focus:bg-white outline-none transition-all font-medium text-sm text-gray-700 min-h-[100px]"
                     />
                   </div>
                 </div>
@@ -360,8 +344,26 @@ const DoctorAppointments = () => {
                     value={treatmentNotes}
                     onChange={(e) => setTreatmentNotes(e.target.value)}
                     placeholder="Describe findings, prescribed medicine, and advice..."
-                    className="w-full px-6 py-4 bg-gray-50 border-2 border-gray-50 rounded-2xl focus:border-teal-500 focus:bg-white outline-none transition-all font-medium text-sm text-gray-700 resize-none shadow-inner"
+                    className="w-full px-6 py-4 bg-gray-50 border-2 border-gray-50 rounded-2xl focus:border-teal-500 focus:bg-white outline-none transition-all font-medium text-sm text-gray-700 min-h-[150px] shadow-inner"
                   />
+                </div>
+
+                <div className="bg-orange-50/50 p-6 rounded-3xl border border-orange-100 mt-4">
+                  <div className="flex items-center gap-3 mb-4">
+                    <IndianRupee size={18} className="text-orange-600" />
+                    <p className="text-[10px] font-black text-orange-600 uppercase tracking-widest">Consultation Fees</p>
+                  </div>
+                  <div className="relative">
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold">₹</span>
+                    <input 
+                      required
+                      type="number" 
+                      value={consultationFee}
+                      onChange={(e) => setConsultationFee(e.target.value)}
+                      placeholder="500"
+                      className="w-full pl-10 pr-6 py-4 bg-white border-2 border-orange-100 rounded-2xl focus:border-orange-500 outline-none transition-all font-black text-lg text-gray-900"
+                    />
+                  </div>
                 </div>
 
                 <div className="border-t border-dashed border-gray-200 pt-6">

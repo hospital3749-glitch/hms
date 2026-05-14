@@ -23,7 +23,10 @@ const WardsManagement = () => {
   });
 
   useEffect(() => {
-    setWards(storage.getWards());
+    const unsubscribe = storage.subscribeWards((data) => {
+      setWards(data);
+    });
+    return () => unsubscribe();
   }, []);
 
   const handleOpenModal = (ward?: Ward) => {
@@ -42,32 +45,22 @@ const WardsManagement = () => {
     setIsModalOpen(true);
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     const status = formData.occupancy >= formData.capacity ? 'Full' : 'Available';
-    let updatedWards: Ward[];
     
-    if (editingWard) {
-      updatedWards = wards.map(w => w.id === editingWard.id ? { ...w, ...formData, status } : w);
-    } else {
-      const newWard: Ward = {
-        ...formData,
-        id: Math.random().toString(36).substr(2, 9),
-        status
-      };
-      updatedWards = [...wards, newWard];
-    }
+    await storage.saveWard({
+      ...formData,
+      id: editingWard?.id,
+      status
+    });
     
-    setWards(updatedWards);
-    storage.saveWards(updatedWards);
     setIsModalOpen(false);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Delete this ward?')) {
-      const updated = wards.filter(w => w.id !== id);
-      setWards(updated);
-      storage.saveWards(updated);
+      await storage.deleteWard(id);
     }
   };
 

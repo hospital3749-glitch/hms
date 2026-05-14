@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect, useMemo } from 'react';
-import { Check, X, Trash2, Calendar, Clock, User, Phone, Mail, FileText, Search, Filter, UserRound } from 'lucide-react';
+import { Check, X, Trash2, Calendar, Clock, User, Phone, FileText, Search, Filter, UserRound } from 'lucide-react';
 import { storage } from '../../lib/storage';
 import { Appointment, Doctor } from '../../types';
 import Receipt from './Receipt';
@@ -28,21 +28,21 @@ const AppointmentsManagement = () => {
   const tomorrow = tomorrowDate.toISOString().split('T')[0];
 
   useEffect(() => {
-    setAppointments(storage.getAppointments());
-    setDoctors(storage.getDoctors());
+    const unsubAppts = storage.subscribeAppointments((data) => setAppointments(data));
+    const unsubDocs = storage.subscribeDoctors((data) => setDoctors(data));
+    return () => {
+      unsubAppts();
+      unsubDocs();
+    };
   }, []);
 
-  const handleStatusChange = (id: string, status: 'approved' | 'rejected') => {
-    const updated = appointments.map(app => app.id === id ? { ...app, status } : app);
-    setAppointments(updated);
-    storage.saveAppointments(updated);
+  const handleStatusChange = async (id: string, status: 'approved' | 'rejected') => {
+    await storage.updateAppointmentStatus(id, status);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Are you sure you want to delete this appointment?')) {
-      const updated = appointments.filter(app => app.id !== id);
-      setAppointments(updated);
-      storage.saveAppointments(updated);
+      await storage.deleteAppointment(id);
     }
   };
 
@@ -201,12 +201,6 @@ const AppointmentsManagement = () => {
                           <Phone size={14} className="text-gray-400" />
                           <span>{app.mobileNumber}</span>
                         </div>
-                        {app.email && (
-                          <div className="flex items-center gap-2 text-sm text-gray-500">
-                            <Mail size={14} className="text-gray-400" />
-                            <span className="truncate">{app.email}</span>
-                          </div>
-                        )}
                       </div>
                     </div>
 
@@ -267,14 +261,23 @@ const AppointmentsManagement = () => {
                       <span className={`px-4 py-1.5 rounded-full text-xs font-bold border ${getStatusStyle(app.status)}`}>
                         {app.status.toUpperCase()}
                       </span>
-                      
+
                       {app.checked && (
-                        <button 
-                          onClick={() => { setSelectedAppt(app); setShowReceipt(true); }}
-                          className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-teal-700 transition-all shadow-lg shadow-teal-600/20"
-                        >
-                          <FileText size={14} /> Receipt
-                        </button>
+                        <div className="flex flex-col gap-2 w-full">
+                          <div className={`px-4 py-1.5 rounded-xl text-[10px] font-black border flex items-center justify-between gap-4 ${
+                            app.paymentStatus === 'paid' ? 'bg-green-50 text-green-600 border-green-100' : 'bg-red-50 text-red-600 border-red-100'
+                          }`}>
+                            <span>{app.paymentStatus?.toUpperCase() || 'PENDING'}</span>
+                            <span>₹{app.totalAmount || app.fee}</span>
+                          </div>
+                          
+                          <button 
+                            onClick={() => { setSelectedAppt(app); setShowReceipt(true); }}
+                            className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-teal-700 transition-all shadow-lg shadow-teal-600/20"
+                          >
+                            <FileText size={14} /> Receipt / Billing
+                          </button>
+                        </div>
                       )}
                       
                       <p className="text-[10px] text-gray-400 font-medium">Booked: {new Date(app.createdAt).toLocaleDateString()}</p>

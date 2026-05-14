@@ -1,0 +1,95 @@
+{
+  "entities": {
+    "Doctor": {
+      "title": "Doctor",
+      "description": "Medical professional details",
+      "type": "object",
+      "properties": {
+        "doctorId": { "type": "string" },
+        "doctorName": { "type": "string" },
+        "specialization": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "inTime": { "type": "string" },
+        "outTime": { "type": "string" },
+        "activeStatus": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "image": { "type": "string" },
+        "fee": { "type": "number" },
+        "lastCheckIn": { "type": "string" },
+        "lastCheckOut": { "type": "string" }
+      },
+      "required": ["doctorId", "doctorName", "specialization", "email", "activeStatus"]
+    },
+    "Patient": {
+      "title": "Patient",
+      "description": "Patient information",
+      "type": "object",
+      "properties": {
+        "patientId": { "type": "string" },
+        "patientName": { "type": "string" },
+        "age": { "type": "number" },
+        "gender": { "type": "string" },
+        "phone": { "type": "string" },
+        "disease": { "type": "string" },
+        "appointmentDate": { "type": "string" },
+        "doctorAssigned": { "type": "string" },
+        "docId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["patientId", "patientName"]
+    },
+    "Appointment": {
+      "title": "Appointment",
+      "description": "Appointment records",
+      "type": "object",
+      "properties": {
+        "appointmentId": { "type": "string" },
+        "patientName": { "type": "string" },
+        "doctorName": { "type": "string" },
+        "docId": { "type": "string" },
+        "date": { "type": "string" },
+        "time": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "checked": { "type": "boolean" },
+        "fee": { "type": "number" },
+        "symptoms": { "type": "string" },
+        "diagnosis": { "type": "string" },
+        "treatmentNotes": { "type": "string" }
+      },
+      "required": ["appointmentId", "patientName", "doctorName", "docId", "date"]
+    },
+    "Admin": {
+      "title": "Admin",
+      "description": "Admin user data",
+      "type": "object",
+      "properties": {
+        "adminId": { "type": "string" },
+        "username": { "type": "string" },
+        "password": { "type": "string" },
+        "role": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["adminId", "username", "password"]
+    }
+  },
+  "firestore": {
+    "doctors/{doctorId}": {
+      "schema": "Doctor",
+      "description": "Collection of doctors"
+    },
+    "patients/{patientId}": {
+      "schema": "Patient",
+      "description": "Collection of patients"
+    },
+    "appointments/{appointmentId}": {
+      "schema": "Appointment",
+      "description": "Collection of appointments"
+    },
+    "admins/{adminId}": {
+      "schema": "Admin",
+      "description": "Collection of admins"
+    }
+  }
+}

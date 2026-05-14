@@ -6,35 +6,35 @@
 import React, { useState, useEffect } from 'react';
 import { storage } from '../../lib/storage';
 import { Appointment } from '../../types';
-import { Users, Search, ChevronRight, MessageCircle, Mail, Phone, Calendar } from 'lucide-react';
+import { Users, Search, ChevronRight, MessageCircle, Phone, Calendar } from 'lucide-react';
 
 const DoctorPatients = () => {
-  const [patients, setPatients] = useState<{name: string, mobile: string, email?: string, lastVisit: string, appointmentId: string}[]>([]);
+  const [patients, setPatients] = useState<{name: string, mobile: string, lastVisit: string, appointmentId: string}[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   
   const doctorId = localStorage.getItem('mauli_doctor_id');
 
   useEffect(() => {
     if (!doctorId) return;
-    const allAppts = storage.getAppointments();
-    const docAppts = allAppts.filter(app => app.doctorId === doctorId && app.checked);
-    
-    // Group by patient name to get unique patient list with their last visit
-    const patientMap = new Map();
-    docAppts.forEach(app => {
-      // Sort by date/time (simplified here)
-      if (!patientMap.has(app.patientName)) {
-        patientMap.set(app.patientName, {
-          name: app.patientName,
-          mobile: app.mobileNumber,
-          email: app.email,
-          lastVisit: app.date,
-          appointmentId: app.id
-        });
-      }
-    });
+    const unsubscribe = storage.subscribeDoctorAppointments(doctorId, (docAppts) => {
+      const checkedAppts = docAppts.filter(app => app.checked);
+      
+      // Group by patient name to get unique patient list with their last visit
+      const patientMap = new Map();
+      checkedAppts.forEach(app => {
+        if (!patientMap.has(app.patientName)) {
+          patientMap.set(app.patientName, {
+            name: app.patientName,
+            mobile: app.mobileNumber,
+            lastVisit: app.date,
+            appointmentId: app.id
+          });
+        }
+      });
 
-    setPatients(Array.from(patientMap.values()));
+      setPatients(Array.from(patientMap.values()));
+    });
+    return () => unsubscribe();
   }, [doctorId]);
 
   const filteredPatients = patients.filter(p => 
@@ -99,12 +99,6 @@ const DoctorPatients = () => {
                         <Phone size={12} className="text-indigo-600" />
                         {patient.mobile}
                       </div>
-                      {patient.email && (
-                        <div className="flex items-center gap-2 text-xs font-medium text-gray-400 italic">
-                          <Mail size={12} />
-                          {patient.email}
-                        </div>
-                      )}
                     </div>
                   </td>
                   <td className="py-6 px-4">

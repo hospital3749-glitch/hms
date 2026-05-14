@@ -5,6 +5,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { storage } from '../../lib/storage';
+import { db } from '../../lib/firebase';
+import { doc, onSnapshot } from 'firebase/firestore';
 import { Appointment, Doctor } from '../../types';
 import { Calendar, Users, Clock, ArrowRight, UserCheck, Bell, LogIn, LogOut } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -18,44 +20,41 @@ const DoctorDashboard = () => {
   });
   const [recentAppts, setRecentAppts] = useState<Appointment[]>([]);
 
-  const fetchDoctorData = () => {
+  useEffect(() => {
     const doctorId = localStorage.getItem('mauli_doctor_id');
     if (!doctorId) return;
 
-    const doctors = storage.getDoctors();
-    const currentDoc = doctors.find(d => d.id === doctorId);
-    setDoctor(currentDoc || null);
-
-    const appointments = storage.getAppointments();
-    const docAppts = appointments.filter(app => app.doctorId === doctorId);
-    
-    const today = new Date().toISOString().split('T')[0];
-    const todayDocAppts = docAppts.filter(app => app.date === today);
-    
-    // Unique patients seen by this doctor
-    const uniquePatients = new Set(docAppts.map(app => app.patientName)).size;
-    
-    const pending = docAppts.filter(app => app.status === 'approved' && !app.checked).length;
-
-    setStats({
-      todayAppts: todayDocAppts.length,
-      totalPatients: uniquePatients,
-      pendingActions: pending
+    const unsubDoc = onSnapshot(doc(db, 'doctors', doctorId), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setDoctor({ ...data, id: docSnap.id } as Doctor);
+      }
     });
 
-    setRecentAppts(todayDocAppts.slice(0, 5));
-  };
+    const unsubAppts = storage.subscribeDoctorAppointments(doctorId, (appointments) => {
+      const today = new Date().toISOString().split('T')[0];
+      const todayDocAppts = appointments.filter(app => app.date === today);
+      const uniquePatients = new Set(appointments.map(app => app.patientName)).size;
+      const pending = appointments.filter(app => app.status === 'approved' && !app.checked).length;
 
-  useEffect(() => {
-    fetchDoctorData();
-    const interval = setInterval(fetchDoctorData, 10000);
-    return () => clearInterval(interval);
+      setStats({
+        todayAppts: todayDocAppts.length,
+        totalPatients: uniquePatients,
+        pendingActions: pending
+      });
+      setRecentAppts(todayDocAppts.slice(0, 5));
+    });
+
+    return () => {
+      unsubDoc();
+      unsubAppts();
+    };
   }, []);
 
-  const handleCheckAction = (type: 'in' | 'out') => {
-    if (!doctor) return;
-    storage.updateDoctorStatus(doctor.id, type === 'in');
-    fetchDoctorData();
+  const handleCheckAction = async (type: 'in' | 'out') => {
+    const doctorId = localStorage.getItem('mauli_doctor_id');
+    if (!doctorId) return;
+    await storage.updateDoctorStatus(doctorId, type === 'in');
   };
 
   const formatTime = (isoString?: string) => {
@@ -81,17 +80,17 @@ const DoctorDashboard = () => {
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Welcome, {doctor?.name}</h1>
           <div className="flex items-center gap-2 mt-2">
-            <div className={`w-2 h-2 rounded-full ${doctor?.isAvailable ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
-            <p className="text-gray-500 font-medium">Status: {doctor?.isAvailable ? 'Active / Available' : 'Inactive / Away'}</p>
+            <div className={`w-2 h-2 rounded-full ${(doctor?.activeStatus || doctor?.isAvailable) ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
+            <p className="text-gray-500 font-medium">Status: {(doctor?.activeStatus || doctor?.isAvailable) ? 'Active / Available' : 'Inactive / Away'}</p>
           </div>
         </div>
         
         <div className="flex items-center gap-3">
           <button 
-            disabled={doctor?.isAvailable}
+            disabled={doctor?.activeStatus || doctor?.isAvailable}
             onClick={() => handleCheckAction('in')}
             className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-bold text-sm transition-all shadow-lg ${
-              doctor?.isAvailable 
+              (doctor?.activeStatus || doctor?.isAvailable) 
                 ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
                 : 'bg-white text-green-600 hover:bg-green-50 border border-green-100'
             }`}
@@ -99,10 +98,10 @@ const DoctorDashboard = () => {
             <LogIn size={18} /> Check-In
           </button>
           <button 
-            disabled={!doctor?.isAvailable}
+            disabled={!(doctor?.activeStatus || doctor?.isAvailable)}
             onClick={() => handleCheckAction('out')}
             className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-bold text-sm transition-all shadow-lg ${
-              !doctor?.isAvailable 
+              !(doctor?.activeStatus || doctor?.isAvailable) 
                 ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
                 : 'bg-white text-red-600 hover:bg-red-50 border border-red-100'
             }`}

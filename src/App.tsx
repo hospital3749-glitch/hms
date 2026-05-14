@@ -9,7 +9,6 @@ import {
 } from 'react-router-dom';
 import { 
   Phone, 
-  Mail,
   MapPin, 
   Calendar, 
   Clock, 
@@ -30,6 +29,8 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { storage } from './lib/storage';
+import { db } from './lib/firebase';
+import { doc, getDoc } from 'firebase/firestore';
 import { Doctor } from './types';
 
 // Admin Components
@@ -53,7 +54,6 @@ import DoctorSidebar from './components/Doctor/Sidebar';
 const Header = () => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const location = useLocation();
 
   useEffect(() => {
     const handleScroll = () => {
@@ -70,8 +70,6 @@ const Header = () => {
     { name: 'Book Appointment', href: '#book-appointment' },
     { name: 'Contact', href: '#contact' },
   ];
-
-  if (location.pathname.startsWith('/admin')) return null;
 
   return (
     <header 
@@ -174,6 +172,20 @@ const Header = () => {
   );
 };
 
+const PromotionalBanner = () => {
+  const [isVisible, setIsVisible] = useState(true);
+  if (!isVisible) return null;
+  return (
+    <div className="bg-teal-900 text-white py-2 px-4 relative z-[60] text-center">
+      <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-center gap-4">
+        <span className="text-sm font-bold"><Zap size={14} className="inline mr-2 text-teal-400" /> Get Quick Appointment with Top Doctors | 24/7 Support</span>
+        <a href="#book-appointment" className="bg-teal-500 text-xs font-bold px-4 py-1 rounded-full">Book Now</a>
+      </div>
+      <button onClick={() => setIsVisible(false)} className="absolute right-4 top-1/2 -translate-y-1/2 opacity-50 hover:opacity-100"><X size={16} /></button>
+    </div>
+  );
+};
+
 const Hero = () => {
   return (
     <section className="relative h-[90vh] min-h-[600px] flex items-center overflow-hidden">
@@ -269,7 +281,6 @@ const FullAppointmentForm = () => {
   const [formData, setFormData] = useState({
     patientName: '',
     mobileNumber: '',
-    email: '',
     doctor: '',
     department: '',
     date: '',
@@ -277,18 +288,24 @@ const FullAppointmentForm = () => {
     description: ''
   });
   const [isSubmitted, setIsSubmitted] = useState(false);
-  const [availableDoctors, setAvailableDoctors] = useState<string[]>([]);
+  const [availableDoctors, setAvailableDoctors] = useState<{name: string, id: string}[]>([]);
 
   useEffect(() => {
-    const doctors = storage.getDoctors();
-    setAvailableDoctors(doctors.map(d => d.name));
+    const unsubscribe = storage.subscribeDoctors((doctors) => {
+      setAvailableDoctors(doctors.map(d => ({ name: d.name, id: d.id })));
+    });
+    return () => unsubscribe();
   }, []);
 
   const departments = ['Cardiology', 'Neurology', 'Dental', 'Radiology', 'General'];
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    storage.addAppointment(formData);
+    const selectedDoc = availableDoctors.find(d => d.name === formData.doctor);
+    await storage.addAppointment({
+      ...formData,
+      doctorId: selectedDoc?.id || 'unknown'
+    });
     setIsSubmitted(true);
     setTimeout(() => setIsSubmitted(false), 5000);
     handleReset();
@@ -298,7 +315,6 @@ const FullAppointmentForm = () => {
     setFormData({
       patientName: '',
       mobileNumber: '',
-      email: '',
       doctor: '',
       department: '',
       date: '',
@@ -368,18 +384,6 @@ const FullAppointmentForm = () => {
                   />
                 </div>
 
-                {/* Email (Optional) */}
-                <div className="space-y-2">
-                  <label className="text-sm font-bold text-gray-700 ml-1">Email Address (Optional)</label>
-                  <input 
-                    type="email" 
-                    value={formData.email}
-                    onChange={(e) => setFormData({...formData, email: e.target.value})}
-                    placeholder="email@example.com"
-                    className="w-full px-5 py-4 bg-gray-50 border border-gray-100 rounded-2xl focus:ring-2 focus:ring-teal-500 outline-none transition-all"
-                  />
-                </div>
-
                 {/* Department Selection */}
                 <div className="space-y-2">
                   <label className="text-sm font-bold text-gray-700 ml-1">Select Department</label>
@@ -404,7 +408,7 @@ const FullAppointmentForm = () => {
                     className="w-full px-5 py-4 bg-gray-50 border border-gray-100 rounded-2xl focus:ring-2 focus:ring-teal-500 outline-none transition-all appearance-none"
                   >
                     <option value="">Choose Doctor</option>
-                    {availableDoctors.map(doc => <option key={doc} value={doc}>{doc}</option>)}
+                    {availableDoctors.map(doc => <option key={doc.id} value={doc.name}>{doc.name}</option>)}
                   </select>
                 </div>
 
@@ -501,9 +505,14 @@ const ServicesSection = () => {
 
 const DoctorsSection = () => {
   const [doctors, setDoctors] = useState<Doctor[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    setDoctors(storage.getDoctors());
+    const unsubscribe = storage.subscribeDoctors((data) => {
+      setDoctors(data);
+      setLoading(false);
+    });
+    return () => unsubscribe();
   }, []);
 
   return (
@@ -515,20 +524,24 @@ const DoctorsSection = () => {
             <h2 className="text-4xl font-bold text-gray-900 mb-4">Meet Our Top Specialists</h2>
           </div>
         </div>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-10">
-          {doctors.map((doc, idx) => (
-            <div key={idx} className="group">
-              <div className="relative overflow-hidden rounded-3xl mb-6 aspect-square bg-gray-100">
-                <img src={doc.image || 'https://images.unsplash.com/photo-1559839734-2b71ef159963'} alt={doc.name} className="w-full h-full object-cover group-hover:scale-110 transition-all duration-500" />
+        {loading ? (
+          <div className="text-center py-20 text-gray-400 font-bold italic">Loading Specialists...</div>
+        ) : (
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-10">
+            {doctors.map((doc, idx) => (
+              <div key={idx} className="group">
+                <div className="relative overflow-hidden rounded-3xl mb-6 aspect-square bg-gray-100">
+                  <img src={doc.image || 'https://images.unsplash.com/photo-1559839734-2b71ef159963'} alt={doc.name} className="w-full h-full object-cover group-hover:scale-110 transition-all duration-500" />
+                </div>
+                <div className="flex items-center justify-between mb-1">
+                  <h3 className="text-2xl font-bold text-gray-900">{doc.name || doc.doctorName}</h3>
+                  <div className={`w-3 h-3 rounded-full ${doc.isAvailable || doc.activeStatus ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-gray-300'}`} title={doc.isAvailable || doc.activeStatus ? 'Active' : 'Offline'}></div>
+                </div>
+                <p className="text-teal-600 font-semibold">{doc.specialization}</p>
               </div>
-              <div className="flex items-center justify-between mb-1">
-                <h3 className="text-2xl font-bold text-gray-900">{doc.name}</h3>
-                <div className={`w-3 h-3 rounded-full ${doc.isAvailable ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-gray-300'}`} title={doc.isAvailable ? 'Active' : 'Offline'}></div>
-              </div>
-              <p className="text-teal-600 font-semibold">{doc.specialization}</p>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </section>
   );
@@ -598,7 +611,6 @@ const ContactSection = () => {
             <div className="space-y-6">
               <div className="flex gap-4"><MapPin className="text-teal-600" /><p>123 Medical Way, Cityville, ST 56789</p></div>
               <div className="flex gap-4"><Phone className="text-teal-600" /><p>+1 (800) MED-CARE</p></div>
-              <div className="flex gap-4"><Mail className="text-teal-600" /><p>contact@maulihospital.com</p></div>
             </div>
           </div>
           <div className="h-[300px] bg-gray-100 rounded-3xl overflow-hidden border border-gray-200">
@@ -610,24 +622,7 @@ const ContactSection = () => {
   );
 };
 
-const PromotionalBanner = () => {
-  const [isVisible, setIsVisible] = useState(true);
-  const location = useLocation();
-  if (!isVisible || location.pathname.startsWith('/admin')) return null;
-  return (
-    <div className="bg-teal-900 text-white py-2 px-4 relative z-[60] text-center">
-      <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-center gap-4">
-        <span className="text-sm font-bold"><Zap size={14} className="inline mr-2 text-teal-400" /> Get Quick Appointment with Top Doctors | 24/7 Support</span>
-        <a href="#book-appointment" className="bg-teal-500 text-xs font-bold px-4 py-1 rounded-full">Book Now</a>
-      </div>
-      <button onClick={() => setIsVisible(false)} className="absolute right-4 top-1/2 -translate-y-1/2 opacity-50 hover:opacity-100"><X size={16} /></button>
-    </div>
-  );
-};
-
 const Footer = () => {
-  const location = useLocation();
-  if (location.pathname.startsWith('/admin')) return null;
   return (
     <footer className="bg-gray-900 text-white/50 py-20">
       <div className="max-w-7xl mx-auto px-4 sm:px-6">
@@ -676,17 +671,26 @@ const PublicHome = () => (
   </>
 );
 
+// --- Layout Components ---
+
+const PublicLayout = ({ children }: { children: React.ReactNode }) => (
+  <div className="min-h-screen bg-white font-sans text-gray-900 scroll-smooth">
+    <PromotionalBanner />
+    <Header />
+    <main>{children}</main>
+    <Footer />
+  </div>
+);
+
 const AdminLayout = ({ children }: { children: React.ReactNode }) => {
   const isLoggedIn = localStorage.getItem('mauli_admin_logged_in') === 'true';
   
-  if (!isLoggedIn) {
-    return <Navigate to="/" replace />;
-  }
+  if (!isLoggedIn) return <Navigate to="/admin/login" replace />;
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
       <AdminSidebar />
-      <div className="flex-1 ml-64 min-h-screen overflow-y-auto">
+      <div className="flex-1 ml-64">
         <main>{children}</main>
       </div>
     </div>
@@ -696,14 +700,12 @@ const AdminLayout = ({ children }: { children: React.ReactNode }) => {
 const DoctorLayout = ({ children }: { children: React.ReactNode }) => {
   const isLoggedIn = localStorage.getItem('mauli_doctor_logged_in') === 'true';
   
-  if (!isLoggedIn) {
-    return <Navigate to="/doctor/login" replace />;
-  }
+  if (!isLoggedIn) return <Navigate to="/doctor/login" replace />;
 
   return (
     <div className="min-h-screen bg-sky-50 flex">
       <DoctorSidebar />
-      <div className="flex-1 ml-80 min-h-screen overflow-y-auto">
+      <div className="flex-1 ml-80">
         <main>{children}</main>
       </div>
     </div>
@@ -711,49 +713,55 @@ const DoctorLayout = ({ children }: { children: React.ReactNode }) => {
 };
 
 export default function App() {
+  useEffect(() => {
+    storage.initializeAdmin();
+  }, []);
+
   return (
     <BrowserRouter>
-      <div className="min-h-screen bg-white font-sans text-gray-900 scroll-smooth">
-        <PromotionalBanner />
-        <Header />
-        
-        <Routes>
-          {/* Public Routes */}
-          <Route path="/" element={<PublicHome />} />
-          <Route path="/admin/login" element={<AdminLogin />} />
+      <Routes>
+        {/* Public Routes */}
+        <Route path="/" element={<PublicLayout><PublicHome /></PublicLayout>} />
+        <Route path="/admin/login" element={<AdminLogin />} />
 
-          {/* Admin Protected Routes */}
-          <Route path="/admin/dashboard" element={<AdminLayout><AdminDashboard /></AdminLayout>} />
-          <Route path="/admin/doctors" element={<AdminLayout><AdminDoctors /></AdminLayout>} />
-          <Route path="/admin/appointments" element={<AdminLayout><AdminAppointments /></AdminLayout>} />
-          <Route path="/admin/wards" element={<AdminLayout><AdminWards /></AdminLayout>} />
-          <Route path="/admin/revenue" element={<AdminLayout><AdminRevenue /></AdminLayout>} />
+        {/* Admin Protected Routes */}
+        <Route path="/admin/dashboard" element={<AdminLayout><AdminDashboard /></AdminLayout>} />
+        <Route path="/admin/doctors" element={<AdminLayout><AdminDoctors /></AdminLayout>} />
+        <Route path="/admin/appointments" element={<AdminLayout><AdminAppointments /></AdminLayout>} />
+        <Route path="/admin/wards" element={<AdminLayout><AdminWards /></AdminLayout>} />
+        <Route path="/admin/revenue" element={<AdminLayout><AdminRevenue /></AdminLayout>} />
 
-          {/* Doctor Portal */}
-          <Route path="/doctor/login" element={<DoctorLogin />} />
-          <Route path="/doctor" element={<Navigate to="/doctor/dashboard" replace />} />
-          <Route path="/doctor/dashboard" element={<DoctorLayout><DoctorDashboard /></DoctorLayout>} />
-          <Route path="/doctor/appointments" element={<DoctorLayout><DoctorAppointments /></DoctorLayout>} />
-          <Route path="/doctor/patients" element={<DoctorLayout><DoctorPatients /></DoctorLayout>} />
+        {/* Doctor Portal */}
+        <Route path="/doctor/login" element={<DoctorLogin />} />
+        <Route path="/doctor" element={<Navigate to="/doctor/dashboard" replace />} />
+        <Route path="/doctor/dashboard" element={<DoctorLayout><DoctorDashboard /></DoctorLayout>} />
+        <Route path="/doctor/appointments" element={<DoctorLayout><DoctorAppointments /></DoctorLayout>} />
+        <Route path="/doctor/patients" element={<DoctorLayout><DoctorPatients /></DoctorLayout>} />
 
-          {/* Fallback */}
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        {/* Fallback */}
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
 
-        <Footer />
-
-        {/* WhatsApp Floating Button */}
-        <a 
-          href="https://wa.me/1234567890" 
-          target="_blank" 
-          rel="noopener noreferrer"
-          className="fixed bottom-8 right-8 z-[60] bg-green-500 text-white p-4 rounded-full shadow-2xl hover:bg-green-600 transition-all hover:scale-110 active:scale-95 group flex items-center gap-2"
-          aria-label="Contact on WhatsApp"
-        >
-          <MessageSquare className="w-6 h-6" />
-          <span className="hidden group-hover:block font-bold pr-2">Chat with us</span>
-        </a>
-      </div>
+      {/* WhatsApp Floating Button - only on public home */}
+      <WhatsAppFloatingButton />
     </BrowserRouter>
   );
 }
+
+const WhatsAppFloatingButton = () => {
+  const location = useLocation();
+  if (location.pathname !== '/') return null;
+  
+  return (
+    <a 
+      href="https://wa.me/1234567890" 
+      target="_blank" 
+      rel="noopener noreferrer"
+      className="fixed bottom-8 right-8 z-[60] bg-green-500 text-white p-4 rounded-full shadow-2xl hover:bg-green-600 transition-all hover:scale-110 active:scale-95 group flex items-center gap-2"
+      aria-label="Contact on WhatsApp"
+    >
+      <MessageSquare className="w-6 h-6" />
+      <span className="hidden group-hover:block font-bold pr-2">Chat with us</span>
+    </a>
+  );
+};

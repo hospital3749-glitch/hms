@@ -12,14 +12,19 @@ const DoctorSidebar = () => {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const handleLogout = () => {
-    const doctorId = localStorage.getItem('mauli_doctor_id');
-    if (doctorId) {
-      storage.updateDoctorStatus(doctorId, false);
+  const handleLogout = async () => {
+    try {
+      const doctorId = localStorage.getItem('mauli_doctor_id');
+      if (doctorId) {
+        await storage.updateDoctorStatus(doctorId, false);
+      }
+      localStorage.removeItem('mauli_doctor_logged_in');
+      localStorage.removeItem('mauli_doctor_id');
+      localStorage.removeItem('mauli_doctor_username');
+      navigate('/doctor/login');
+    } catch (error) {
+      console.error('Logout error:', error);
     }
-    localStorage.removeItem('mauli_doctor_logged_in');
-    localStorage.removeItem('mauli_doctor_id');
-    navigate('/doctor/login');
   };
 
   const menuItems = [
@@ -34,7 +39,7 @@ const DoctorSidebar = () => {
         <div className="p-3 bg-teal-600 rounded-2xl shadow-lg shadow-teal-600/20">
           <Heart className="text-white" size={24} />
         </div>
-        <span className="text-2xl font-black text-gray-900 tracking-tight">Mauli <span className="text-teal-600">Doc</span></span>
+        <span className="text-2xl font-black text-gray-900 tracking-tight">Doctor Panel</span>
       </div>
 
       <nav className="flex-1 px-6 space-y-3">

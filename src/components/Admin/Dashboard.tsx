@@ -4,13 +4,14 @@
  */
 
 import { useState, useEffect } from 'react';
-import { Users, CalendarCheck, Clock, ArrowRight, IndianRupee, Building2 } from 'lucide-react';
+import { Users, CalendarCheck, Clock, ArrowRight, IndianRupee, Building2, Activity } from 'lucide-react';
 import { storage } from '../../lib/storage';
 import { Link } from 'react-router-dom';
 
 const Dashboard = () => {
   const [stats, setStats] = useState({
     totalDoctors: 0,
+    activeDoctors: 0,
     totalAppointments: 0,
     todayAppointments: 0,
     totalRevenue: 0,
@@ -20,30 +21,45 @@ const Dashboard = () => {
   const [todayAppts, setTodayAppts] = useState<any[]>([]);
 
   useEffect(() => {
-    const doctors = storage.getDoctors();
-    const appointments = storage.getAppointments();
-    const wards = storage.getWards();
-    const today = new Date().toISOString().split('T')[0];
-    
-    const todayCount = appointments.filter(app => app.date === today).length;
-    const revenue = appointments.reduce((acc, curr) => acc + (curr.fee || 0), 0);
-    const avWards = wards.filter(w => w.status === 'Available').length;
-
-    setStats({
-      totalDoctors: doctors.length,
-      totalAppointments: appointments.length,
-      todayAppointments: todayCount,
-      totalRevenue: revenue,
-      availableWards: avWards
+    const unsubDoctors = storage.subscribeDoctors((doctors) => {
+      const activeCount = doctors.filter(d => d.activeStatus || d.isAvailable).length;
+      setStats(prev => ({ 
+        ...prev, 
+        totalDoctors: doctors.length,
+        activeDoctors: activeCount
+      }));
     });
 
-    setTodayAppts(appointments.filter(app => app.date === today).slice(0, 5));
+    const unsubAppointments = storage.subscribeAppointments((appointments) => {
+      const today = new Date().toISOString().split('T')[0];
+      const todayCount = appointments.filter(app => app.date === today).length;
+      const revenue = appointments.reduce((acc, curr) => acc + (curr.fee || 0), 0);
+      
+      setStats(prev => ({ 
+        ...prev, 
+        totalAppointments: appointments.length,
+        todayAppointments: todayCount,
+        totalRevenue: revenue
+      }));
+      setTodayAppts(appointments.filter(app => app.date === today).slice(0, 5));
+    });
+
+    // Wards might remain static or I could make them a collection too
+    storage.getWards().then(wards => {
+      const avWards = wards.filter(w => w.status === 'Available').length;
+      setStats(prev => ({ ...prev, availableWards: avWards }));
+    });
+
+    return () => {
+      unsubDoctors();
+      unsubAppointments();
+    };
   }, []);
 
   const cards = [
     { name: 'Total Doctors', value: stats.totalDoctors, icon: <Users size={24} />, color: 'bg-blue-500', link: '/admin/doctors' },
+    { name: 'Active Doctors', value: stats.activeDoctors, icon: <Activity size={24} />, color: 'bg-green-500', link: '/admin/doctors' },
     { name: 'Appointments', value: stats.totalAppointments, icon: <CalendarCheck size={24} />, color: 'bg-teal-500', link: '/admin/appointments' },
-    { name: "Today's Appts", value: stats.todayAppointments, icon: <Clock size={24} />, color: 'bg-orange-500', link: '/admin/appointments' },
     { name: 'Total Revenue', value: `₹${stats.totalRevenue.toLocaleString()}`, icon: <IndianRupee size={24} />, color: 'bg-indigo-500', link: '/admin/revenue' },
     { name: 'Available Wards', value: stats.availableWards, icon: <Building2 size={24} />, color: 'bg-purple-500', link: '/admin/wards' },
   ];

@@ -12,6 +12,7 @@ const Sidebar = () => {
 
   const handleLogout = () => {
     localStorage.removeItem('mauli_admin_logged_in');
+    localStorage.removeItem('mauli_admin_username');
     navigate('/');
   };
 

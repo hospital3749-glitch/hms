@@ -5,24 +5,30 @@
 
 export interface Doctor {
   id: string;
-  name: string;
+  doctorId: string; // Requested field
+  name: string; // UI uses this: doctorName
+  doctorName: string; // Requested field
   specialization: string;
-  contact: string;
-  email: string;
+  contact: string; // UI uses this: phone
+  phone: string; // Requested field
+  email: string; // Requested field
   image: string;
-  isAvailable: boolean;
+  isAvailable: boolean; // UI uses this: activeStatus
+  activeStatus: boolean; // Requested field
   fee: number;
   username: string;
   password?: string;
+  inTime: string; // Requested field
+  outTime: string; // Requested field
   lastCheckIn?: string;
   lastCheckOut?: string;
+  createdAt: string; // Requested field
 }
 
 export interface Appointment {
   id: string;
   patientName: string;
   mobileNumber: string;
-  email?: string;
   doctor: string;
   doctorId: string; // Linked ID
   department: string;
@@ -40,6 +46,11 @@ export interface Appointment {
   temperature?: string;
   height?: string;
   fee: number;
+  consultationFee?: number;
+  extraCharges?: number;
+  discount?: number;
+  totalAmount?: number;
+  paymentStatus?: 'pending' | 'paid';
   createdAt: string;
 }
 

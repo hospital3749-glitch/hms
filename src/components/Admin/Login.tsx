@@ -5,22 +5,63 @@
 
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Heart, Lock, User, AlertCircle, Stethoscope } from 'lucide-react';
+import { Heart, Lock, User, AlertCircle, Stethoscope, Eye, EyeOff } from 'lucide-react';
 import { motion } from 'motion/react';
+import { db } from '../../lib/firebase';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 
 const Login = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const navigate = useNavigate();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (username === 'admin' && password === 'admin060121') {
-      localStorage.setItem('mauli_admin_logged_in', 'true');
-      navigate('/admin/dashboard');
-    } else {
-      setError('Invalid username or password');
+    setLoading(true);
+    setError('');
+    
+    try {
+      const trimmedUsername = username.trim();
+      const trimmedPassword = password.trim();
+      
+      // Fallback for default admin
+      const isDefaultAdmin = trimmedUsername === 'admin' && trimmedPassword === 'admin0123456';
+      
+      let success = false;
+      
+      try {
+        const q = query(
+          collection(db, 'admins'), 
+          where('username', '==', trimmedUsername),
+          where('password', '==', trimmedPassword)
+        );
+        
+        const querySnapshot = await getDocs(q);
+        if (!querySnapshot.empty) {
+          success = true;
+        }
+      } catch (dbErr) {
+        console.warn('Database connection failed, checking fallback...', dbErr);
+      }
+
+      // Final check: either DB matched or it's the hardcoded default
+      if (success || isDefaultAdmin) {
+        localStorage.removeItem('mauli_doctor_logged_in');
+        localStorage.removeItem('mauli_doctor_id');
+        localStorage.setItem('mauli_admin_logged_in', 'true');
+        localStorage.setItem('mauli_admin_username', trimmedUsername);
+        navigate('/admin/dashboard');
+      } else {
+        setError('Invalid username or password');
+      }
+    } catch (err: any) {
+      console.error('Login error:', err);
+      setError('Connection error. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -37,7 +78,6 @@ const Login = () => {
               <Heart className="text-white w-8 h-8" />
             </div>
             <h1 className="text-3xl font-bold text-gray-900">Admin Login</h1>
-            <p className="text-gray-500 mt-2 font-medium">Mauli Hospital Systems</p>
           </div>
 
           {error && (
@@ -57,12 +97,12 @@ const Login = () => {
               <div className="relative">
                 <User size={20} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input 
-                  type="text" 
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="Enter username"
-                  className="w-full pl-12 pr-4 py-4 bg-gray-50 border border-gray-100 rounded-2xl focus:ring-2 focus:ring-teal-500 outline-none transition-all font-medium"
-                  required
+                   type="text" 
+                   value={username}
+                   onChange={(e) => setUsername(e.target.value)}
+                   placeholder="Enter username"
+                   className="w-full pl-12 pr-4 py-4 bg-gray-50 border border-gray-100 rounded-2xl focus:ring-2 focus:ring-teal-500 outline-none transition-all font-medium"
+                   required
                 />
               </div>
             </div>
@@ -72,21 +112,29 @@ const Login = () => {
               <div className="relative">
                 <Lock size={20} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input 
-                  type="password" 
+                  type={showPassword ? "text" : "password"} 
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Enter password"
-                  className="w-full pl-12 pr-4 py-4 bg-gray-50 border border-gray-100 rounded-2xl focus:ring-2 focus:ring-teal-500 outline-none transition-all font-medium"
+                  className="w-full pl-12 pr-12 py-4 bg-gray-50 border border-gray-100 rounded-2xl focus:ring-2 focus:ring-teal-500 outline-none transition-all font-medium"
                   required
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-teal-600 transition-colors"
+                >
+                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                </button>
               </div>
             </div>
 
             <button 
               type="submit"
-              className="w-full bg-teal-600 text-white py-4 rounded-2xl font-bold text-lg hover:bg-teal-700 transition-all shadow-lg shadow-teal-600/20 mt-8"
+              disabled={loading}
+              className="w-full bg-teal-600 text-white py-4 rounded-2xl font-bold text-lg hover:bg-teal-700 transition-all shadow-lg shadow-teal-600/20 mt-8 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Login to Dashboard
+              {loading ? 'Authenticating...' : 'Login to Dashboard'}
             </button>
           </form>
 

@@ -5,27 +5,55 @@
 
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Stethoscope, Lock, User, AlertCircle, ShieldCheck } from 'lucide-react';
+import { Stethoscope, Lock, User, AlertCircle, ShieldCheck, Eye, EyeOff } from 'lucide-react';
 import { storage } from '../../lib/storage';
+import { db } from '../../lib/firebase';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 
 const DoctorLogin = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const navigate = useNavigate();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    const doctors = storage.getDoctors();
-    const doctor = doctors.find(d => d.username === username && d.password === password);
+    setLoading(true);
+    setError('');
 
-    if (doctor) {
-      storage.updateDoctorStatus(doctor.id, true);
-      localStorage.setItem('mauli_doctor_logged_in', 'true');
-      localStorage.setItem('mauli_doctor_id', doctor.id);
-      navigate('/doctor/dashboard');
-    } else {
-      setError('Invalid username or password');
+    try {
+      const trimmedUsername = username.trim();
+      const trimmedPassword = password.trim();
+
+      const q = query(
+        collection(db, 'doctors'),
+        where('username', '==', trimmedUsername),
+        where('password', '==', trimmedPassword)
+      );
+
+      const querySnapshot = await getDocs(q);
+
+      if (!querySnapshot.empty) {
+        const doctorDoc = querySnapshot.docs[0];
+        const doctorData = doctorDoc.data();
+        
+        await storage.updateDoctorStatus(doctorDoc.id, true);
+        localStorage.removeItem('mauli_admin_logged_in');
+        localStorage.removeItem('mauli_admin_username');
+        localStorage.setItem('mauli_doctor_logged_in', 'true');
+        localStorage.setItem('mauli_doctor_id', doctorDoc.id);
+        localStorage.setItem('mauli_doctor_username', trimmedUsername);
+        navigate('/doctor/dashboard');
+      } else {
+        setError('Invalid username or password. Please contact admin if you are not registered.');
+      }
+    } catch (err: any) {
+      console.error('Login error:', err);
+      setError('Connection error. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -57,7 +85,7 @@ const DoctorLogin = () => {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 className="w-full pl-12 pr-4 py-4 bg-gray-50 border border-gray-100 rounded-2xl focus:ring-2 focus:ring-teal-500 outline-none transition-all font-medium"
-                placeholder="Ex. doc_sarah"
+                placeholder="Enter username"
                 required
               />
             </div>
@@ -68,21 +96,29 @@ const DoctorLogin = () => {
             <div className="relative">
               <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
               <input 
-                type="password" 
+                type={showPassword ? "text" : "password"} 
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full pl-12 pr-4 py-4 bg-gray-50 border border-gray-100 rounded-2xl focus:ring-2 focus:ring-teal-500 outline-none transition-all font-medium"
+                className="w-full pl-12 pr-12 py-4 bg-gray-50 border border-gray-100 rounded-2xl focus:ring-2 focus:ring-teal-500 outline-none transition-all font-medium"
                 placeholder="••••••••"
                 required
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-teal-600 transition-colors"
+              >
+                {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+              </button>
             </div>
           </div>
 
           <button 
             type="submit"
-            className="w-full bg-teal-600 text-white py-5 rounded-2xl font-bold text-lg hover:bg-teal-700 transition-all flex items-center justify-center gap-2 mt-4 shadow-xl shadow-teal-600/20"
+            disabled={loading}
+            className="w-full bg-teal-600 text-white py-5 rounded-2xl font-bold text-lg hover:bg-teal-700 transition-all flex items-center justify-center gap-2 mt-4 shadow-xl shadow-teal-600/20 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Sign In to Panel
+            {loading ? 'Verifying...' : 'Sign In to Panel'}
           </button>
         </form>
 

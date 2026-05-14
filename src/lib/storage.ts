@@ -3,131 +3,281 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { 
+  collection, 
+  getDocs, 
+  setDoc, 
+  doc, 
+  updateDoc, 
+  deleteDoc, 
+  query, 
+  where,
+  addDoc,
+  serverTimestamp,
+  getDoc,
+  orderBy,
+  onSnapshot
+} from 'firebase/firestore';
+import { db, handleFirestoreError, OperationType, cleanData } from './firebase';
 import { Doctor, Appointment, Ward } from '../types';
 
-const DOCTORS_KEY = 'mauli_doctors';
-const APPOINTMENTS_KEY = 'mauli_appointments';
-const WARDS_KEY = 'mauli_wards';
-
-const initialDoctors: Doctor[] = [
-  { 
-    id: '1', 
-    name: 'Dr. Sarah Smith', 
-    specialization: 'Cardiology', 
-    contact: '555-0101', 
-    email: 'sarah.smith@maulihospital.com',
-    image: 'https://images.unsplash.com/photo-1559839734-2b71ef159963',
-    isAvailable: true,
-    fee: 150,
-    username: 'sarah_doc',
-    password: 'password123',
-    lastCheckIn: new Date().toLocaleTimeString(),
-    lastCheckOut: '-'
-  },
-  { 
-    id: '2', 
-    name: 'Dr. James Wilson', 
-    specialization: 'Neurology', 
-    contact: '555-0102', 
-    email: 'james.wilson@maulihospital.com',
-    image: 'https://images.unsplash.com/photo-1612349317150-e413f6a5b16d',
-    isAvailable: true,
-    fee: 200,
-    username: 'james_doc',
-    password: 'password123',
-    lastCheckIn: new Date().toLocaleTimeString(),
-    lastCheckOut: '-'
-  },
-  { 
-    id: '3', 
-    name: 'Dr. Emily Chen', 
-    specialization: 'Dental', 
-    contact: '555-0103', 
-    email: 'emily.chen@maulihospital.com',
-    image: 'https://images.unsplash.com/photo-1594824476967-48c8b964273f',
-    isAvailable: false,
-    fee: 120,
-    username: 'emily_doc',
-    password: 'password123',
-    lastCheckIn: '-',
-    lastCheckOut: new Date().toLocaleTimeString()
-  },
-];
-
-const initialWards: Ward[] = [
-  { id: '1', name: 'General Ward A', type: 'General', capacity: 20, occupancy: 12, status: 'Available' },
-  { id: '2', name: 'ICU-1', type: 'ICU', capacity: 5, occupancy: 5, status: 'Full' },
-  { id: '3', name: 'Pediatric Ward', type: 'Pediatric', capacity: 15, occupancy: 8, status: 'Available' },
-];
+const DOCTORS_COLLECTION = 'doctors';
+const APPOINTMENTS_COLLECTION = 'appointments';
+const WARDS_COLLECTION = 'wards';
+const PATIENTS_COLLECTION = 'patients';
 
 export const storage = {
-  getDoctors: (): Doctor[] => {
-    const data = localStorage.getItem(DOCTORS_KEY);
-    if (!data) {
-      localStorage.setItem(DOCTORS_KEY, JSON.stringify(initialDoctors));
-      return initialDoctors;
+  getDoctors: async (): Promise<Doctor[]> => {
+    try {
+      const q = query(collection(db, DOCTORS_COLLECTION), orderBy('doctorName', 'asc'));
+      const snapshot = await getDocs(q);
+      return snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Doctor));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.LIST, DOCTORS_COLLECTION);
+      return [];
     }
-    return JSON.parse(data);
   },
 
-  saveDoctors: (doctors: Doctor[]) => {
-    localStorage.setItem(DOCTORS_KEY, JSON.stringify(doctors));
+  subscribeDoctors: (callback: (doctors: Doctor[]) => void) => {
+    const q = query(collection(db, DOCTORS_COLLECTION), orderBy('doctorName', 'asc'));
+    return onSnapshot(q, (snapshot) => {
+      const doctors = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Doctor));
+      callback(doctors);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, DOCTORS_COLLECTION);
+    });
   },
 
-  getWards: (): Ward[] => {
-    const data = localStorage.getItem(WARDS_KEY);
-    if (!data) {
-      localStorage.setItem(WARDS_KEY, JSON.stringify(initialWards));
-      return initialWards;
+  saveDoctor: async (doctor: Partial<Doctor>) => {
+    try {
+      const id = doctor.id || doc(collection(db, DOCTORS_COLLECTION)).id;
+      const docRef = doc(db, DOCTORS_COLLECTION, id);
+      const data = cleanData({
+        ...doctor,
+        id,
+        doctorId: id,
+        createdAt: doctor.createdAt || new Date().toISOString(),
+      });
+      await setDoc(docRef, data, { merge: true });
+      return id;
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, DOCTORS_COLLECTION);
     }
-    return JSON.parse(data);
   },
 
-  saveWards: (wards: Ward[]) => {
-    localStorage.setItem(WARDS_KEY, JSON.stringify(wards));
+  deleteDoctor: async (id: string) => {
+    try {
+      await deleteDoc(doc(db, DOCTORS_COLLECTION, id));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, DOCTORS_COLLECTION);
+    }
   },
 
-  getAppointments: (): Appointment[] => {
-    const data = localStorage.getItem(APPOINTMENTS_KEY);
-    return data ? JSON.parse(data) : [];
+  getAppointments: async (): Promise<Appointment[]> => {
+    try {
+      const q = query(collection(db, APPOINTMENTS_COLLECTION), orderBy('createdAt', 'desc'));
+      const snapshot = await getDocs(q);
+      return snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Appointment));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.LIST, APPOINTMENTS_COLLECTION);
+      return [];
+    }
   },
 
-  saveAppointments: (appointments: Appointment[]) => {
-    localStorage.setItem(APPOINTMENTS_KEY, JSON.stringify(appointments));
+  subscribeAppointments: (callback: (appointments: Appointment[]) => void) => {
+    const q = query(collection(db, APPOINTMENTS_COLLECTION), orderBy('createdAt', 'desc'));
+    return onSnapshot(q, (snapshot) => {
+      const appointments = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Appointment));
+      callback(appointments);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, APPOINTMENTS_COLLECTION);
+    });
   },
 
-  addAppointment: (appointment: Omit<Appointment, 'id' | 'status' | 'createdAt' | 'fee' | 'checked' | 'doctorId' | 'treatmentNotes' | 'symptoms' | 'diagnosis' | 'weight' | 'bloodPressure' | 'temperature' | 'height'>) => {
-    const appointments = storage.getAppointments();
-    const doctors = storage.getDoctors();
-    const doctor = doctors.find(d => d.name === appointment.doctor);
-    
-    const newAppointment: Appointment = {
-      ...appointment,
-      id: Math.random().toString(36).substr(2, 9),
-      doctorId: doctor ? doctor.id : 'unknown',
-      status: 'pending',
-      checked: false,
-      fee: doctor ? doctor.fee : 100,
-      createdAt: new Date().toISOString(),
-    };
-    appointments.push(newAppointment);
-    storage.saveAppointments(appointments);
-    return newAppointment;
+  addAppointment: async (appointment: any) => {
+    try {
+      const data = cleanData({
+        ...appointment,
+        status: 'pending',
+        checked: false,
+        createdAt: new Date().toISOString(),
+      });
+      const docRef = await addDoc(collection(db, APPOINTMENTS_COLLECTION), data);
+      // Also add to patients collection as requested
+      await addDoc(collection(db, PATIENTS_COLLECTION), cleanData({
+        patientName: appointment.patientName,
+        phone: appointment.mobileNumber,
+        appointmentDate: appointment.date,
+        doctorAssigned: appointment.doctor,
+        docId: appointment.doctorId,
+        createdAt: new Date().toISOString(),
+      }));
+      return docRef.id;
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, APPOINTMENTS_COLLECTION);
+    }
   },
 
-  updateDoctorStatus: (id: string, isAvailable: boolean) => {
-    const doctors = storage.getDoctors();
-    const updated = doctors.map(d => 
-      d.id === id 
-        ? { 
-            ...d, 
-            isAvailable, 
-            lastCheckIn: isAvailable ? new Date().toISOString() : d.lastCheckIn,
-            lastCheckOut: !isAvailable ? new Date().toISOString() : d.lastCheckOut 
-          } 
-        : d
+  updateAppointmentStatus: async (id: string, status: string, extraData: any = {}) => {
+    try {
+      await updateDoc(doc(db, APPOINTMENTS_COLLECTION, id), cleanData({ status, ...extraData }));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, APPOINTMENTS_COLLECTION);
+    }
+  },
+
+  deleteAppointment: async (id: string) => {
+    try {
+      await deleteDoc(doc(db, APPOINTMENTS_COLLECTION, id));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, APPOINTMENTS_COLLECTION);
+    }
+  },
+
+  updateDoctorStatus: async (id: string, isAvailable: boolean) => {
+    try {
+      const now = new Date();
+      const timeString = now.toLocaleTimeString('en-US', { 
+        hour: '2-digit', 
+        minute: '2-digit', 
+        hour12: true 
+      });
+      
+      const updateData: any = {
+        activeStatus: isAvailable,
+        isAvailable,
+      };
+
+      if (isAvailable) {
+        updateData.inTime = timeString;
+        updateData.lastLoginDate = now.toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric'
+        });
+      } else {
+        updateData.outTime = timeString;
+      }
+
+      await updateDoc(doc(db, DOCTORS_COLLECTION, id), updateData);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, DOCTORS_COLLECTION);
+    }
+  },
+
+  getWards: async (): Promise<Ward[]> => {
+    try {
+      const snapshot = await getDocs(collection(db, WARDS_COLLECTION));
+      if (snapshot.empty) return [];
+      return snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Ward));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.LIST, WARDS_COLLECTION);
+      return [];
+    }
+  },
+
+  subscribeWards: (callback: (wards: Ward[]) => void) => {
+    return onSnapshot(collection(db, WARDS_COLLECTION), (snapshot) => {
+      const wards = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Ward));
+      callback(wards);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, WARDS_COLLECTION);
+    });
+  },
+
+  saveWard: async (ward: Partial<Ward>) => {
+    try {
+      const id = ward.id || doc(collection(db, WARDS_COLLECTION)).id;
+      const docRef = doc(db, WARDS_COLLECTION, id);
+      await setDoc(docRef, cleanData({ ...ward, id }), { merge: true });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, WARDS_COLLECTION);
+    }
+  },
+
+  deleteWard: async (id: string) => {
+    try {
+      await deleteDoc(doc(db, WARDS_COLLECTION, id));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, WARDS_COLLECTION);
+    }
+  },
+
+  getPatients: async (): Promise<any[]> => {
+    try {
+      const q = query(collection(db, PATIENTS_COLLECTION), orderBy('createdAt', 'desc'));
+      const snapshot = await getDocs(q);
+      return snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.LIST, PATIENTS_COLLECTION);
+      return [];
+    }
+  },
+
+  subscribePatients: (callback: (patients: any[]) => void) => {
+    const q = query(collection(db, PATIENTS_COLLECTION), orderBy('createdAt', 'desc'));
+    return onSnapshot(q, (snapshot) => {
+      callback(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, PATIENTS_COLLECTION);
+    });
+  },
+
+  subscribeDoctorAppointments: (doctorId: string, callback: (appointments: Appointment[]) => void) => {
+    const q = query(
+      collection(db, APPOINTMENTS_COLLECTION), 
+      where('doctorId', '==', doctorId),
+      orderBy('createdAt', 'desc')
     );
-    storage.saveDoctors(updated);
-    return updated;
+    return onSnapshot(q, (snapshot) => {
+      callback(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Appointment)));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, APPOINTMENTS_COLLECTION);
+    });
+  },
+
+  getDoctor: async (id: string): Promise<Doctor | null> => {
+    try {
+      const docSnap = await getDoc(doc(db, DOCTORS_COLLECTION, id));
+      if (docSnap.exists()) {
+        return { ...docSnap.data(), id: docSnap.id } as Doctor;
+      }
+      return null;
+    } catch (error) {
+      handleFirestoreError(error, OperationType.GET, DOCTORS_COLLECTION);
+      return null;
+    }
+  },
+
+  initializeAdmin: async () => {
+    try {
+      const adminRef = doc(db, 'admins', 'default_admin');
+      const adminSnap = await getDoc(adminRef);
+      
+      const defaultData = {
+        adminId: 'default_admin',
+        username: 'admin',
+        password: 'admin0123456',
+        role: 'admin',
+        updatedAt: new Date().toISOString()
+      };
+
+      if (!adminSnap.exists()) {
+        await setDoc(adminRef, {
+          ...defaultData,
+          createdAt: new Date().toISOString()
+        });
+        console.log('Admin account initialized: admin / admin0123456');
+      } else {
+        // Ensure default admin always has at least these fields if they are missing
+        const existingData = adminSnap.data();
+        if (!existingData.username || !existingData.password) {
+          await setDoc(adminRef, defaultData, { merge: true });
+          console.log('Admin account updated with default credentials');
+        }
+      }
+    } catch (error) {
+      console.error('Admin initialization failed:', error);
+    }
   }
 };

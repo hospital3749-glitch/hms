@@ -17,29 +17,31 @@ const Revenue = () => {
   });
 
   useEffect(() => {
-    const data = storage.getAppointments();
-    setAppointments(data);
+    const unsubscribe = storage.subscribeAppointments((data) => {
+      setAppointments(data);
 
-    const now = new Date();
-    const todayStr = now.toISOString().split('T')[0];
-    const monthStr = now.toISOString().substring(0, 7); // YYYY-MM
+      const now = new Date();
+      const todayStr = now.toISOString().split('T')[0];
+      const monthStr = now.toISOString().substring(0, 7); // YYYY-MM
 
-    let total = 0;
-    let today = 0;
-    let monthly = 0;
+      let total = 0;
+      let today = 0;
+      let monthly = 0;
 
-    data.forEach(app => {
-      const fee = app.fee || 0;
-      total += fee;
-      if (app.date === todayStr) {
-        today += fee;
-      }
-      if (app.date?.startsWith(monthStr)) {
-        monthly += fee;
-      }
+      data.forEach(app => {
+        const fee = app.fee || 0;
+        total += fee;
+        if (app.date === todayStr) {
+          today += fee;
+        }
+        if (app.date?.startsWith(monthStr)) {
+          monthly += fee;
+        }
+      });
+
+      setStats({ total, today, monthly });
     });
-
-    setStats({ total, today, monthly });
+    return () => unsubscribe();
   }, []);
 
   const cards = [
